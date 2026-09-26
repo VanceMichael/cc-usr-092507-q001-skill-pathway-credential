@@ -20,6 +20,22 @@
 
 `contracts/domain.schema.json` 定义领域资料结构，`fixtures/domain.json` 提供不含真实身份信息的示例，`src/skill_pathway_credential/context.py` 负责读取并检查这些资料。
 
+## 实现结构
+
+后端采用事件溯源：一切状态变化先写入事件日志（可持久化为 JSONL），再折叠为内存投影；重放截至某日的事件即可还原当日状态。
+
+- `domain.py` — 学段（中职/高职/应用型本科）、学籍状态、复核决定类型、披露范围与业务异常
+- `events.py` — 追加式事件存储，支持按日期回放与中断恢复
+- `projection.py` — 事件折叠为学生、计划、结论、岗位、授权等可查询状态
+- `service.py` — `CredentialService` 统一入口：
+  - 成果提交按内容哈希幂等：重复提交返回原凭证，内容变化暂停旧结论折算等待核查
+  - 复核人须具备资格且无利益冲突；承认/拒绝/补证决定均可通过 `explain_decision` 解释
+  - 能力结论认定时钉住标准版本；标准换版只重算未完成计划项
+  - 转学、休学、专业调整自动释放实习名额，学分随人走不重复占用
+  - 企业撤回岗位时，受影响学生按原顺序优先安置到同技能空缺岗位
+  - 批量转段原子生效；`pathway_as_of` / `authorization_as_of` 还原指定日期的路径与授权
+  - `verify_invariants` 校验学分与容量守恒
+
 ## 开发命令
 
 - 运行测试：`python3 -m unittest discover -s tests -v`
